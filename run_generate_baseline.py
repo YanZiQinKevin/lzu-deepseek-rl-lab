@@ -17,7 +17,7 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
 import torch
 from tqdm.auto import tqdm
@@ -54,15 +54,15 @@ def build_prompt(question: str) -> str:
     构造给模型的 user prompt。
 
     这里专门强调:
-    - 要 step by step 推理
+    - 直接给出数值答案
     - 最终答案用 \\boxed{} 包起来
     方便后续判题器直接解析。
     """
     return (
-        "You are an expert competition mathematician. "
-        "Think carefully, but keep your **reasoning concise** (no more than 5 short steps).  "
-        "Then put ONLY the final answer inside \\boxed{}.\n\n"
-        "Problem:\n"
+        "You are an expert competition mathematician."
+        "Directly give the final numerical answer in the format \\boxed{}."
+        "Do NOT show any reasoning steps.\n\n"
+        "Question:\n"
         f"{question.strip()}\n"
     )
 
@@ -199,6 +199,9 @@ def read_existing_example_ids(jsonl_path: Path) -> set[int]:
     """
     如果已经跑过一部分样本，可以通过读取现有 jsonl，
     把已经完成的 example_id 收集起来，实现断点续跑。
+
+    注意：这里是按 example_id 粒度判断是否“已完成”；
+    如果你修改了 --num-samples，最好删掉旧的 jsonl 再重跑。
     """
     done_ids: set[int] = set()
     if not jsonl_path.exists():
@@ -229,6 +232,7 @@ def generate_for_task(
     top_p: float,
     max_new_tokens: int,
     seed: int,
+    num_samples: int,
     device: Optional[str] = None,
 ) -> None:
     """
@@ -236,6 +240,8 @@ def generate_for_task(
 
     文件命名:
         <task_name>_seed<seed>.jsonl
+
+    每个样本会生成 num_samples 个回答（sample_id 从 0..num_samples-1）。
     """
     cfg = get_task_config_by_name(task_name)
     if cfg is None:
@@ -277,39 +283,45 @@ def generate_for_task(
         if sample.example_id in done_ids:
             continue
 
-        try:
-            response = generate_answer_for_sample(
-                sample=sample,
-                model=model,
-                tokenizer=tokenizer,
-                temperature=temperature,
-                top_p=top_p,
-                max_new_tokens=max_new_tokens,
-                device=device,
-            )
-        except RuntimeError as e:
-            # 一些 OOM 或其他异常在这里被捕获，你可以按需处理
-            print(f"\n[ERROR] Failed on {task_name}#{sample.example_id}: {e}")
-            # 简单策略：写一个空响应，标记错误
-            response = f"[GENERATION_ERROR] {repr(e)}"
+        for k in range(num_samples):
+            # 为了让每个 sample_id 的输出不同，可以在 base seed 基础上偏移
+            this_seed = seed * 1000 + k
+            set_random_seed(this_seed)
 
-        record = {
-            "task_name": sample.task_name,
-            "example_id": sample.example_id,
-            "question": sample.question,
-            "answer": sample.answer,
-            "response": response,
-            "seed": seed,
-            "gen_config": {
-                "temperature": temperature,
-                "top_p": top_p,
-                "max_new_tokens": max_new_tokens,
-                "model_name": BASE_MODEL,
-            },
-        }
+            try:
+                response = generate_answer_for_sample(
+                    sample=sample,
+                    model=model,
+                    tokenizer=tokenizer,
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_new_tokens=max_new_tokens,
+                    device=device,
+                )
+            except RuntimeError as e:
+                # 一些 OOM 或其他异常在这里被捕获，你可以按需处理
+                print(f"\n[ERROR] Failed on {task_name}#{sample.example_id} (sample_id={k}): {e}")
+                # 简单策略：写一个空响应，标记错误
+                response = f"[GENERATION_ERROR] {repr(e)}"
 
-        fout.write(json.dumps(record, ensure_ascii=False) + "\n")
-        fout.flush()
+            record = {
+                "task_name": sample.task_name,
+                "example_id": sample.example_id,
+                "sample_id": k,
+                "question": sample.question,
+                "answer": sample.answer,
+                "response": response,
+                "seed": this_seed,
+                "gen_config": {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "max_new_tokens": max_new_tokens,
+                    "model_name": BASE_MODEL,
+                },
+            }
+
+            fout.write(json.dumps(record, ensure_ascii=False) + "\n")
+            fout.flush()
 
     fout.close()
     print(f"[INFO] Finished task={task_name}, results saved to {out_file}")
@@ -366,6 +378,12 @@ def parse_args() -> argparse.Namespace:
         default=MAX_NEW_TOKENS,
         help=f"最大生成长度（新 token 数），默认 {MAX_NEW_TOKENS}",
     )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=1,
+        help="每个样本生成多少个回答（即 @K 里的 K），默认 1。",
+    )
     return parser.parse_args()
 
 
@@ -383,7 +401,8 @@ def main():
     print(f"[INFO] Tasks to run: {task_names}")
     print(f"[INFO] Using seed={args.seed}, 4bit={args.use_4bit}, device={args.device}")
     print(f"[INFO] Generation params: temperature={args.temperature}, "
-          f"top_p={args.top_p}, max_new_tokens={args.max_new_tokens}")
+          f"top_p={args.top_p}, max_new_tokens={args.max_new_tokens}, "
+          f"num_samples={args.num_samples}")
 
     # 加载模型
     model, tokenizer = load_model_and_tokenizer(
@@ -404,6 +423,7 @@ def main():
             top_p=args.top_p,
             max_new_tokens=args.max_new_tokens,
             seed=args.seed,
+            num_samples=args.num_samples,
             device=args.device,
         )
 
@@ -412,7 +432,7 @@ def main():
 
 if __name__ == "__main__":
     import sys
-    sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24", "--max-samples", "10"]
-    #sys.argv = ["run_generate_baseline.py", "--tasks", "MATH-500", "--max-samples", "5"]
-    #sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24"]
+    #sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24", "--max-samples", "3","--num-samples","3"]
+    sys.argv = ["run_generate_baseline.py", "--tasks", "MATH-500", "--max-samples", "10"]
+    #sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24", "--max-samples", "3"]
     main()

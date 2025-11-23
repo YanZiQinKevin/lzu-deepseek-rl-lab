@@ -12,8 +12,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional
-
+import ast
 import pandas as pd
+import numpy as np
+import sys, os, signal
 
 
 @dataclass
@@ -35,54 +37,76 @@ def load_task_samples(
     parquet_path: Path,
     n: Optional[int] = None,
 ) -> List[Sample]:
-    """
-    从单个任务的 parquet 文件中读出样本，并转换为 Sample 列表。
-
-    参数
-    ----
-    task_name : 任务名称，例如 "AIME24"
-    parquet_path : 该任务对应的 .parquet 文件路径
-    n : 如果为 None，使用全部样本；否则只取前 n 条（用于快速测试）
-
-    返回
-    ----
-    samples : List[Sample]
-    """
     df = _load_parquet(parquet_path)
 
-    # 兼容两种格式：
-    # 1) BRUMO25 / CMIMC25 / HMMT25:
-    #       - 列 "problem" 存题目
-    #       - 列 "answer"  存标准答案
-    # 2) 其他数据集（DAPO 风格）:
-    #       - 列 "prompt" 是一个 list[{"role":..., "content": ...}, ...]
-    #       - 列 "reward_model" 是一个 dict，里面有 "ground_truth"
     is_simple_qa = any(
         key in str(parquet_path)
         for key in ["BRUMO25", "CMIMC25", "HMMT25"]
     )
 
     samples: List[Sample] = []
-
-    # 决定要遍历多少条
     total = len(df) if n is None else min(n, len(df))
 
     for i in range(total):
         if is_simple_qa:
-            # 直接从 "problem" / "answer" 取
             question = str(df.at[i, "problem"]).strip()
             answer = str(df.at[i, "answer"]).strip()
         else:
-            # DAPO / 其他：prompt 是对话形式，取第一条 user 的 content
-            prompt = df.at[i, "prompt"]
-            if isinstance(prompt, list) and len(prompt) > 0:
-                question = str(prompt[0]["content"]).strip()
+            # ---------- 处理 prompt ----------
+            prompt_raw = df.at[i, "prompt"]
+            prompt = prompt_raw
+
+            # 1) 如果是 numpy 数组，先拿出里面的元素
+            if isinstance(prompt_raw, np.ndarray):
+                # 一般是 1 维，里面就一个元素
+                if prompt_raw.size > 0:
+                    prompt = prompt_raw[0]
+                    #print("数组",prompt,type(prompt))
+                else:
+                    prompt = ""
+
+            # 2) 如果是字符串，看起来像 list/dict 的，再尝试解析
+            if isinstance(prompt, str):
+                try:
+
+                    parsed = ast.literal_eval(prompt)
+                    prompt = parsed
+                    #print("字符:",prompt,type(prompt))
+                except Exception:
+                    # 不是合法的 Python 表达式就保持字符串
+                    pass
+
+            # 3) 现在期望 prompt 是 list[dict]，取第一个 message 的 content
+            if isinstance(prompt, list) and prompt and isinstance(prompt[0], dict):
+                # 形式: [{'content': '...', 'role': 'user'}, ...]
+                question = str(prompt[0].get("content", "")).strip()
+            elif isinstance(prompt, dict):
+                # 形式: {'content': '...', 'role': 'user'}
+                question = str(prompt.get("content", "")).strip()
             else:
                 # 兜底：直接转成字符串
                 question = str(prompt).strip()
+            #print("DEBUG prompt type:", type(prompt_raw), "parsed type:", type(prompt), "question:", question[:60])
 
-            reward_info = df.at[i, "reward_model"]
-            # 通常是个 dict，有 "ground_truth" 键
+            #os.kill(os.getpid(), signal.SIGINT)
+
+            # ---------- 处理 reward_model ----------
+            reward_info_raw = df.at[i, "reward_model"]
+            reward_info = reward_info_raw
+
+            if isinstance(reward_info_raw, np.ndarray):
+                if reward_info_raw.size > 0:
+                    reward_info = reward_info_raw[0]
+                else:
+                    reward_info = ""
+
+            if isinstance(reward_info, str):
+                try:
+                    parsed_rm = ast.literal_eval(reward_info)
+                    reward_info = parsed_rm
+                except Exception:
+                    pass
+
             if isinstance(reward_info, dict):
                 answer = str(reward_info.get("ground_truth", "")).strip()
             else:
