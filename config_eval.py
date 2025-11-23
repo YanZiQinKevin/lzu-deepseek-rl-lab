@@ -76,7 +76,7 @@ SEED_LIST = [0]
 # 采样参数（和 JustRL 原文接近，可以之后再微调）
 TEMPERATURE: float = 0.7
 TOP_P: float = 0.9
-MAX_NEW_TOKENS: int = 768
+MAX_NEW_TOKENS: int = 2048
 
 # ----------------- 输出目录 ----------------- #
 

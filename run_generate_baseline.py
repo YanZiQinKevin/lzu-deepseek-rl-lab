@@ -60,8 +60,8 @@ def build_prompt(question: str) -> str:
     """
     return (
         "You are an expert competition mathematician. "
-        "Solve the following problem step by step. "
-        "Show your reasoning clearly, and put ONLY the final answer inside \\boxed{}.\n\n"
+        "Think carefully, but keep your **reasoning concise** (no more than 5 short steps).  "
+        "Then put ONLY the final answer inside \\boxed{}.\n\n"
         "Problem:\n"
         f"{question.strip()}\n"
     )
@@ -412,7 +412,7 @@ def main():
 
 if __name__ == "__main__":
     import sys
-    #sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24", "--max-samples", "3", "--use-4bit"]
+    sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24", "--max-samples", "10"]
     #sys.argv = ["run_generate_baseline.py", "--tasks", "MATH-500", "--max-samples", "5"]
     #sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24"]
     main()
