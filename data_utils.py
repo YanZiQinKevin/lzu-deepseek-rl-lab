@@ -16,7 +16,7 @@ import ast
 import pandas as pd
 import numpy as np
 import sys, os, signal
-
+import re
 
 @dataclass
 class Sample:
@@ -43,6 +43,10 @@ def load_task_samples(
         key in str(parquet_path)
         for key in ["BRUMO25", "CMIMC25", "HMMT25"]
     )
+    is_GSM8K =any(
+        key in str(parquet_path)
+        for key in ["GSM8K"]
+    )
 
     samples: List[Sample] = []
     total = len(df) if n is None else min(n, len(df))
@@ -51,6 +55,12 @@ def load_task_samples(
         if is_simple_qa:
             question = str(df.at[i, "problem"]).strip()
             answer = str(df.at[i, "answer"]).strip()
+        elif is_GSM8K:
+            question = str(df.at[i, "question"]).strip()
+            full_answer = str(df.at[i, "answer"])
+            #print(repr(full_answer))
+            answer = re.search(r'####\s*(.+)', full_answer).group(1).strip()
+
         else:
             # ---------- 处理 prompt ----------
             prompt_raw = df.at[i, "prompt"]

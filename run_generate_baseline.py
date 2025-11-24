@@ -433,6 +433,6 @@ def main():
 if __name__ == "__main__":
     import sys
     #sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24", "--max-samples", "3","--num-samples","3"]
-    sys.argv = ["run_generate_baseline.py", "--tasks", "MATH-500", "--max-samples", "10"]
-    #sys.argv = ["run_generate_baseline.py", "--tasks", "AIME24", "--max-samples", "3"]
+    #sys.argv = ["run_generate_baseline.py", "--tasks", "GSM8K", "--max-samples", "500"]
+    #sys.argv = ["run_generate_baseline.py", "--tasks", "BRUMO25", "--max-samples", "3"]
     main()

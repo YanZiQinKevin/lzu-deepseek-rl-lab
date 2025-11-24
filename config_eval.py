@@ -67,6 +67,11 @@ TASKS = [
         "path": DATA_DIR / "Olympiad-Bench" / "test.parquet",
         "N": None,
     },
+    {
+        "name": "GSM8K",
+        "path": DATA_DIR / "GSM8K" / "test.parquet",
+        "N": 500,
+    },
 ]
 
 # ----------------- 生成 / 解码超参 ----------------- #
