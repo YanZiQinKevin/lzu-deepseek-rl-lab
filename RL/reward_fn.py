@@ -42,6 +42,36 @@ class RewardConfig:
 DEFAULT_CONFIG = RewardConfig()
 
 
+RL_TRAIN_CONFIG = RewardConfig(
+    alpha_correct=1.0,
+    beta_format=0.5,
+    gamma_eff=0.5,
+    delta_close=0.0,
+    len_free=1500,
+    len_lambda=0.0005,
+)
+
+
+RL_PHASE1_CONFIG = RewardConfig(
+    alpha_correct=0.2,   # 正确性先弱一点
+    beta_format=1.0,     # 强调答题格式
+    gamma_eff=0.8,       # 强调长度惩罚
+    delta_close=0.0,     # 先不管 closeness
+
+    len_free=1500,
+    len_lambda=0.0005,
+)
+
+RL_PHASE2_CONFIG = RewardConfig(
+    alpha_correct=1.0,   # 正确性变成主角
+    beta_format=0.5,     # 适当保持格式约束
+    gamma_eff=0.3,       # 长度约束降一点
+    delta_close=0.0,     # 后面如果想加 closeness 再说
+
+    len_free=1500,
+    len_lambda=0.0005,
+)
+
 # ----------------- 工具函数 ----------------- #
 
 _BOXED_PATTERN = re.compile(r"\\boxed\{([^}]*)\}")
