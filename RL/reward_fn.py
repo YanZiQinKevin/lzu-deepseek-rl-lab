@@ -11,6 +11,7 @@ R = α R_correct + β R_format + γ R_efficiency + δ R_closeness
 - R_efficiency : 长度惩罚（过长输出线性扣分）
 - R_closeness  : 数值接近奖励（可选）
 
+
 后续 RL 训练时可以直接调用 compute_reward(...)
 """
 
