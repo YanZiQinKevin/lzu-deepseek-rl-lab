@@ -136,6 +136,7 @@ def build_prompt(question: str) -> str:
 
 def create_model_and_tokenizer(cfg: RLTrainConfig):
     print(f"[INFO] Loading tokenizer from {cfg.model_path}")
+    
     tokenizer = AutoTokenizer.from_pretrained(
         cfg.model_path,
         use_fast=False,

@@ -23,7 +23,13 @@ from typing import Optional, Dict, Any
 
 from lenient_grader import grade_answer_lenient as grade_fn
 
+import signal
 
+class _TimeoutError(Exception):
+    pass
+
+def _timeout_handler(signum, frame):
+    raise _TimeoutError()
 # ----------------- 配置超参数（后续可以在一个地方统一管理） ----------------- #
 
 @dataclass
@@ -150,11 +156,33 @@ def compute_R_correct(response: str, ground_truth: str) -> float:
     利用现有判题器判断是否答对。
     返回 1.0 或 0.0。
     """
+    """
+        利用现有判题器判断是否答对。
+        - 正常情况下：grade_fn 和以前一样严格判分
+        - 如果判题超过 T 秒（例如 1 秒），就当作错误（0.0），防止训练卡死
+        """
+    TIME_LIMIT = 3  # 判题超时阈值（秒），可以根据实际情况调成 2 或 3
+
+    # 安装超时 handler（只需在主线程使用）
+    old_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _timeout_handler)
+
     try:
+        signal.alarm(TIME_LIMIT)
         is_correct = bool(grade_fn(response, ground_truth))
-    except Exception:
+    except _TimeoutError:
+        # 判题超时：视为错误
         is_correct = False
+    except Exception:
+        # 判题器内部任何异常，也视为错误
+        is_correct = False
+    finally:
+        # 关闭 alarm，并恢复原来的 handler
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+
     return 1.0 * is_correct
+
 
 
 def compute_R_format(response: str) -> float:
