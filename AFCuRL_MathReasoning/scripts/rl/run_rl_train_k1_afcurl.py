@@ -373,6 +373,16 @@ def train_k1_afcurl(cfg: RLTrainConfig):
                 else:
                     reward_cfg = RL_PHASE2_CONFIG
                     phase = 2
+                #  在这里 dump 一份 debug 信息（每次覆盖没关系）
+
+                debug_info = {
+                    "global_step": int(global_step),
+                    "question": str(q),
+                    "ground_truth": str(gt),
+                    "response": gen_text,
+                }
+                with open("debug_lastTrain_sample.json", "w", encoding="utf-8") as f:
+                    json.dump(debug_info, f, ensure_ascii=False, indent=2)
 
                 comps = compute_reward(
                     response=gen_text,
