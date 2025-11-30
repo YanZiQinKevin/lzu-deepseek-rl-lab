@@ -35,6 +35,9 @@ import torch.nn.functional as F
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
+from datetime import datetime
+import time
+
 
 # ---- 工程根目录 ----
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -46,7 +49,7 @@ from reward_fn import (
     RL_PHASE1_CONFIG,
     RL_PHASE2_CONFIG,
 )
-
+print("[DEBUG] reward_fn loaded from:", sys.modules["reward_fn"].__file__)
 # ================== 1. 配置 ================== #
 
 @dataclass
@@ -56,19 +59,19 @@ class RLTrainConfig:
     dev_csv: str
     output_dir: str
 
-    max_steps: int = 1000
-    phase1_steps: int = 400
+    max_steps: int = 600
+    phase1_steps: int = 100
 
-    logging_steps: int = 20
+    logging_steps: int = 5
     save_steps: int = 200
 
-    batch_size: int = 1
+    batch_size: int = 4
     max_prompt_tokens: int = 384
     max_new_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.9
 
-    lr: float = 5e-5
+    lr: float = 2e-5#5e-5
     weight_decay: float = 0.0
     adam_beta1: float = 0.9
     adam_beta2: float = 0.999
@@ -88,9 +91,9 @@ class RLTrainConfig:
     use_ema_baseline: bool = True
 
     # dev monitor
-    dev_k_samples: int = 4
-    dev_max_samples: int = 200
-    dev_eval_every: int = 100
+    dev_k_samples = 1  # 先用 2 次采样评估，差不多能看趋势
+    dev_max_samples = 15  # 每次只随机抽 50 题
+    dev_eval_every = 100  # 保持 100 step 一评
 
     seed: int = 42
     clip_grad_norm: float = 1.0
@@ -110,7 +113,10 @@ CFG = RLTrainConfig(
 )
 
 # ================== 2. 工具函数 ================== #
-
+def get_time():
+    timestamp = time.time()
+    dt = datetime.fromtimestamp(timestamp)
+    return  dt.strftime("%Y-%m-%d %H:%M:%S")
 def set_seed(seed: int):
     random.seed(seed)
     torch.manual_seed(seed)
@@ -129,8 +135,10 @@ def load_data(csv_path: str) -> pd.DataFrame:
 def build_prompt(question: str) -> str:
     system = (
         "You are an expert competition mathematician. "
+        "Think carefully, but keep your reasoning concise (no more than 5 short steps)."
+        "Then give the final numerical answer in the format \boxed{...}."
         "Directly give the final numerical answer in the format \\boxed{}. "
-        "Do NOT show any reasoning steps."
+        "Do NOT output anything after the boxed answer."
     )
     return f"{system}\n\nProblem:\n{question}\n"
 
@@ -271,16 +279,24 @@ def check_lora_nan(model) -> bool:
 
 def evaluate_on_dev(model, tokenizer, dev_df: pd.DataFrame, cfg: RLTrainConfig):
     """
-    dev 上 K=cfg.dev_k_samples best-of-K（Phase2 reward）评估 acc/boxed/len
-    注意：reward_fn.compute_reward(return_components=True) 必须返回：
-        is_correct, has_valid_boxed, len_total
+    在 dev 上做 K = cfg.dev_k_samples 的 best-of-K 评估，返回：
+        acc, boxed_rate, avg_len, n
+
+    注意：
+      - 每次最多评 cfg.dev_max_samples 条样本
+      - compute_reward(return_components=True) 需要至少返回：
+            is_correct, has_valid_boxed, len_total
     """
     model.eval()
 
+    # ---- 1) 子采样：每次最多评 dev_max_samples 条 ----
+    if len(dev_df) == 0:
+        return {"acc": 0.0, "boxed_rate": 0.0, "avg_len": 0.0, "n": 0}
+
     sub_df = dev_df.sample(
         n=min(cfg.dev_max_samples, len(dev_df)),
-        random_state=cfg.seed,
-    )
+        random_state=cfg.seed,   # 固定子集，方便复现；想要每次不同可以换成 None
+    ).reset_index(drop=True)
 
     is_correct_list, boxed_list, len_list = [], [], []
 
@@ -294,7 +310,8 @@ def evaluate_on_dev(model, tokenizer, dev_df: pd.DataFrame, cfg: RLTrainConfig):
                 tokenizer, prompt, cfg.max_prompt_tokens, cfg.device
             )
 
-            cand = []
+            # ---- 2) K 次采样，取 reward 最大的一条（K=1 时就只算一次） ----
+            candidates = []
             for _ in range(cfg.dev_k_samples):
                 gen_ids = model.generate(
                     input_ids=prompt_ids,
@@ -304,20 +321,34 @@ def evaluate_on_dev(model, tokenizer, dev_df: pd.DataFrame, cfg: RLTrainConfig):
                     temperature=cfg.temperature,
                     top_p=cfg.top_p,
                     pad_token_id=tokenizer.eos_token_id,
+
+                    repetition_penalty=1.2,
+                    no_repeat_ngram_size=3,
+                    top_k=50,
                 )
                 resp = tokenizer.decode(
                     gen_ids[0][prompt_ids.shape[1]:],
                     skip_special_tokens=True,
                 )
-                comps = compute_reward(resp, gt, cfg=RL_PHASE2_CONFIG, return_components=True)
+
+                comps = compute_reward(
+                    resp,
+                    gt,
+                    cfg=RL_PHASE2_CONFIG,
+                    return_components=True,
+                )
 
                 # 这些字段必须存在，否则说明 reward_fn 还没补齐
-                assert "is_correct" in comps and "has_valid_boxed" in comps and "len_total" in comps, \
-                    "reward_fn.py 的 compute_reward(return_components=True) 需要返回 is_correct/has_valid_boxed/len_total"
+                assert (
+                    "is_correct" in comps
+                    and "has_valid_boxed" in comps
+                    and "len_total" in comps
+                ), "reward_fn.compute_reward(return_components=True) 必须返回 is_correct/has_valid_boxed/len_total"
 
-                cand.append((resp, comps))
+                candidates.append((resp, comps))
 
-            best_resp, best_comps = max(cand, key=lambda x: x[1]["R_total"])
+            # best-of-K（K=1 时就是那一条）
+            _, best_comps = max(candidates, key=lambda x: x[1]["R_total"])
 
             is_correct_list.append(bool(best_comps["is_correct"]))
             boxed_list.append(bool(best_comps["has_valid_boxed"]))
@@ -326,12 +357,17 @@ def evaluate_on_dev(model, tokenizer, dev_df: pd.DataFrame, cfg: RLTrainConfig):
     model.train()
 
     n = len(is_correct_list)
+    acc = float(sum(is_correct_list) / n) if n > 0 else 0.0
+    boxed_rate = float(sum(boxed_list) / n) if n > 0 else 0.0
+    avg_len = float(sum(len_list) / n) if n > 0 else 0.0
+
     return {
-        "acc": float(sum(is_correct_list) / n),
-        "boxed_rate": float(sum(boxed_list) / n),
-        "avg_len": float(sum(len_list) / n),
+        "acc": acc,
+        "boxed_rate": boxed_rate,
+        "avg_len": avg_len,
         "n": int(n),
     }
+
 
 # ================== 4. 主训练循环 ================== #
 
@@ -395,6 +431,10 @@ def train_k1_afcurl_v2(cfg: RLTrainConfig):
                     temperature=cfg.temperature,
                     top_p=cfg.top_p,
                     pad_token_id=tokenizer.eos_token_id,
+
+                    repetition_penalty=1.2,
+                    no_repeat_ngram_size=3,
+                    top_k=50,
                 )
                 resp = tokenizer.decode(
                     gen_ids[0][prompt_ids.shape[1]:],
@@ -482,7 +522,8 @@ def train_k1_afcurl_v2(cfg: RLTrainConfig):
                 f"loss={total_loss:.4f}  "
                 f"R_mean={avg_reward:.4f}  "
                 f"R_running={running_R_mean:.4f}  "
-                f"phase={'1' if global_step <= cfg.phase1_steps else '2'}"
+                f"phase={'1' if global_step <= cfg.phase1_steps else '2'} "
+                f"time at {get_time()}"
             )
 
         # 5) save lora
@@ -494,7 +535,9 @@ def train_k1_afcurl_v2(cfg: RLTrainConfig):
 
         # 6) dev monitor
         if global_step % cfg.dev_eval_every == 0:
+            print(f"[DEBUG] Enter dev eval at step={global_step}, time at {get_time()}", flush=True)
             metrics = evaluate_on_dev(model, tokenizer, dev_df, cfg)
+            print(f"[DEBUG] Leave dev eval at step={global_step}, time at {get_time()}", flush=True)
             wall = time.time() - start_time
             phase_now = 1 if global_step < cfg.phase1_steps else 2
 
