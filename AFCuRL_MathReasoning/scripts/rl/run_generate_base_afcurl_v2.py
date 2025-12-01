@@ -111,14 +111,14 @@ def evaluate(cfg: EvalConfig):
     summary_line = f"[SUMMARY] acc={acc:.3f}, boxed={boxed_rate:.3f}, len={avg_len:.1f}\n"
     with open(PROJECT_ROOT
               / "eval_outputs" / "baselines" / "DeepSeek-R1-Distill-Qwen-1.5B"
-              / "base_distill_gsm8k_dev_k2" /"base_distill_gsm8k_dev_k2.txt", "a", encoding="utf-8") as f:
+              / "base_distill_math_test_k2" /"base_distill_math_test_k2.txt", "a", encoding="utf-8") as f:
         f.write(summary_line)
 
 if __name__ == "__main__":
     cfg = EvalConfig(
         base_model_path=str(PROJECT_ROOT / "models" / "DeepSeek-R1-Distill-Qwen-1.5B"),
-        eval_csv=str(PROJECT_ROOT / "data" / "splits" / "gsm8k" / "gsm8k_dev.csv"),
+        eval_csv=str(PROJECT_ROOT / "data" / "splits" / "math500" / "math500_test.csv"),
         output_csv=str(PROJECT_ROOT / "eval_outputs" / "baselines" / "DeepSeek-R1-Distill-Qwen-1.5B"
-                       /"base_distill_gsm8k_dev_k2"/"base_distill_gsm8k_dev_k2.csv"),
+                       /"base_distill_math_test_k2"/"base_distill_math_test_k2.csv"),
     )
     evaluate(cfg)

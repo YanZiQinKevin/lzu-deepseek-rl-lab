@@ -59,8 +59,8 @@ class RLTrainConfig:
     dev_csv: str
     output_dir: str
 
-    max_steps: int = 600
-    phase1_steps: int = 100
+    max_steps: int = 200
+    phase1_steps: int = 0
 
     logging_steps: int = 5
     save_steps: int = 200
@@ -103,7 +103,10 @@ class RLTrainConfig:
 MODEL_PATH = PROJECT_ROOT / "models" / "DeepSeek-R1-Distill-Qwen-1.5B"
 TRAIN_CSV  = PROJECT_ROOT / "data" / "splits" / "combo" / "gsm8k_math500_train_rl.csv"
 DEV_CSV    = PROJECT_ROOT / "data" / "splits" / "combo" / "gsm8k_math500_dev.csv"
-OUTPUT_DIR = PROJECT_ROOT / "rl_runs" / "DeepSeek-R1-Distill-Qwen-1.5B" / "afcurl_v2_gsm_math_k1_s42"
+#OUTPUT_DIR = PROJECT_ROOT / "rl_runs" / "DeepSeek-R1-Distill-Qwen-1.5B" / "afcurl_v2_gsm_math_k1_s42"j
+#OUTPUT_DIR = PROJECT_ROOT / "rl_runs" / "DeepSeek-R1-Distill-Qwen-1.5B" / "plain_rl_gsm_math_k1_s42" #plain_rl
+OUTPUT_DIR = PROJECT_ROOT / "rl_runs" / "DeepSeek-R1-Distill-Qwen-1.5B" / "answer_only_gsm_math_k1_s42"
+#OUTPUT_DIR = PROJECT_ROOT / "rl+runs" / "DeepSeek-R1-Distill-Qwen-1.5B" / "curriculum_only_gsm_math_k1_s42"
 
 CFG = RLTrainConfig(
     model_path=str(MODEL_PATH),
