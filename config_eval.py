@@ -10,8 +10,8 @@ from pathlib import Path
 
 # ----------------- 模型与设备 ----------------- #
 # DeepSeek-R1-Distill-Qwen-1.5B 作为 baseline 模型
-BASE_MODEL: str = "/mnt/d/OneDrive/兰州交大/博士课题-大模型/models/DeepSeek-R1-Distill-Qwen-1.5B"
-#BASE_MODEL: str = "/mnt/d/OneDrive/兰州交大/博士课题-大模型/models/JustRL-DeepSeek-1.5B"
+#BASE_MODEL: str = "/mnt/d/OneDrive/兰州交大/博士课题-大模型/models/DeepSeek-R1-Distill-Qwen-1.5B"
+BASE_MODEL: str = "/mnt/d/OneDrive/兰州交大/博士课题-大模型/LLMProject/rl_outputs/AF-CuRL"
 
 # 后面可以在脚本里用 torch.cuda.is_available() 动态决定是否用 cuda
 DEFAULT_DEVICE: str = "cuda"

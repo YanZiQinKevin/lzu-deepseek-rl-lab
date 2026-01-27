@@ -217,5 +217,5 @@ def main():
 if __name__ == "__main__":
     import sys
 
-    sys.argv = ["behavior_analysis.py", "--csv-path", "/mnt/d/OneDrive/兰州交大/博士课题-大模型/LLMProject/eval_outputs/DeepSeek-R1-Distill-Qwen-1.5B/graded_samples.csv"]
+    sys.argv = ["behavior_analysis.py", "--csv-path", "/mnt/d/OneDrive/兰州交大/博士课题-大模型/LLMProject/eval_outputs/AF-CuRL/graded_samples.csv"]
     main()
